@@ -61,10 +61,18 @@ struct scalar_traits<T, std::enable_if_t<is_complex_v<T>>> {
 template <typename T>
 using real_type_t = typename scalar_traits<T>::real_type;
 
+// Traits para tipos escalares customizados (ex.: LogNum para aritmética logarítmica)
+template <typename T>
+struct is_custom_scalar : std::false_type {};
+
+template <typename T>
+inline constexpr bool is_custom_scalar_v = is_custom_scalar<T>::value;
+
 // Conceito moderno C++20 para tipos escalares suportados
 template <typename T>
 concept Scalar = std::floating_point<T> ||
-                 (is_complex_v<T> && std::floating_point<typename T::value_type>);
+                 (is_complex_v<T> && std::floating_point<typename T::value_type>) ||
+                 is_custom_scalar_v<T>;
 
 // Classe Matrix: matriz densa em linha contígua (row-major)
 template <Scalar T>
@@ -536,6 +544,100 @@ class Matrix {
 
   [[nodiscard]] Matrix<T> Inv() const { return inv_adjugate(); }
 
+  // --- Potenciação Inteira de Matrizes (A^p via Exponenciação Binária) ---
+  [[nodiscard]] Matrix<T> pow(long long p) const {
+    if (!is_square()) {
+      throw std::invalid_argument("A potenciação de matrizes requer uma matriz quadrada.");
+    }
+    const std::size_t n = rows_;
+    if (p == 0) {
+      return identity(n);
+    }
+    if (p < 0) {
+      return this->inv().pow(-p);
+    }
+    Matrix<T> base = *this;
+    Matrix<T> res = identity(n);
+    long long exp_val = p;
+    while (exp_val > 0) {
+      if (exp_val & 1) {
+        res = res * base;
+      }
+      base = base * base;
+      exp_val >>= 1;
+    }
+    return res;
+  }
+
+  [[nodiscard]] Matrix<T> power(long long p) const { return pow(p); }
+
+  // --- Exponencial Matricial expm(A) = e^A (Scaling and Squaring com Padé [6/6]) ---
+  [[nodiscard]] Matrix<T> expm() const {
+    if (!is_square()) {
+      throw std::invalid_argument("A exponencial matricial expm(A) requer uma matriz quadrada.");
+    }
+    const std::size_t n = rows_;
+    if (n == 0) return *this;
+    if (n == 1) {
+      return Matrix<T>{{std::exp((*this)(0, 0))}};
+    }
+
+    using real_t = real_type_t<T>;
+    using std::abs;
+
+    // Norma-1 da matriz (máxima soma absoluta das colunas)
+    real_t normA = 0;
+    for (std::size_t j = 0; j < cols_; ++j) {
+      real_t col_sum = 0;
+      for (std::size_t i = 0; i < rows_; ++i) {
+        col_sum += abs((*this)(i, j));
+      }
+      if (col_sum > normA) normA = col_sum;
+    }
+
+    // Fator de escala s tal que ||A / 2^s||_1 <= theta (theta = 1.0)
+    const real_t theta = 1.0;
+    int s = 0;
+    if (normA > theta) {
+      s = static_cast<int>(std::ceil(std::log2(normA / theta)));
+      if (s < 0) s = 0;
+    }
+
+    real_t scale = std::pow(static_cast<real_t>(2.0), s);
+    Matrix<T> A_scaled = *this / scale;
+
+    Matrix<T> I = identity(n);
+    Matrix<T> A2 = A_scaled * A_scaled;
+    Matrix<T> A4 = A2 * A2;
+    Matrix<T> A6 = A4 * A2;
+
+    // Coeficientes do Padé [6/6]: c_k = (2p - k)! p! / ((2p)! k! (p - k)!)
+    const real_t c0 = 1.0;
+    const real_t c1 = 1.0 / 2.0;
+    const real_t c2 = 5.0 / 44.0;
+    const real_t c3 = 1.0 / 66.0;
+    const real_t c4 = 1.0 / 792.0;
+    const real_t c5 = 1.0 / 15840.0;
+    const real_t c6 = 1.0 / 665280.0;
+
+    Matrix<T> U_poly = A_scaled * (I * c1 + A2 * c3 + A4 * c5);
+    Matrix<T> V_poly = I * c0 + A2 * c2 + A4 * c4 + A6 * c6;
+
+    Matrix<T> N = V_poly + U_poly;
+    Matrix<T> D = V_poly - U_poly;
+
+    Matrix<T> R = D.inv() * N;
+
+    // Fase de quadratura (squaring): R = R^(2^s)
+    for (int k = 0; k < s; ++k) {
+      R = R * R;
+    }
+
+    return R;
+  }
+
+  [[nodiscard]] Matrix<T> exp() const { return expm(); }
+
  private:
   std::size_t rows_{0};
   std::size_t cols_{0};
@@ -665,6 +767,26 @@ template <Scalar T>
 template <Scalar T>
 [[nodiscard]] inline Matrix<T> eye(std::size_t n) {
   return Matrix<T>::identity(n);
+}
+
+template <Scalar T>
+[[nodiscard]] inline Matrix<T> matrix_power(const Matrix<T>& m, long long p) {
+  return m.pow(p);
+}
+
+template <Scalar T>
+[[nodiscard]] inline Matrix<T> pow(const Matrix<T>& m, long long p) {
+  return m.pow(p);
+}
+
+template <Scalar T>
+[[nodiscard]] inline Matrix<T> expm(const Matrix<T>& m) {
+  return m.expm();
+}
+
+template <Scalar T>
+[[nodiscard]] inline Matrix<T> exp(const Matrix<T>& m) {
+  return m.expm();
 }
 
 // --- Formatação para std::ostream ---
@@ -832,5 +954,12 @@ mat::Matrix<T> inv_lu(const mat::Matrix<T>& A) {
 
     return X.chop(1e-14);
 }
+
+// Exportações adicionais no escopo global
+using mat::matrix_power;
+using mat::pow;
+using mat::expm;
+using mat::exp;
+
 
 

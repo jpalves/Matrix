@@ -56,6 +56,6 @@ int main() {
 
     cout << "Inversa de Aj via SVD (pinv):\n" << pinv(Aj) << endl;
     cout << "Verificação Aj * pinv(Aj):\n" << Aj * pinv(Aj) << endl;
-
+    cout<< pow(Aj,0);
     return 0;
 }
