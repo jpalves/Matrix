@@ -954,6 +954,104 @@ mat::Matrix<T> inv_lu(const mat::Matrix<T>& A) {
 
     return X.chop(1e-14);
 }
+// --- Funções Auxiliares e Utilitários Estilo MATLAB/Octave ---
+
+template <mat::Scalar T>
+[[nodiscard]] inline matriz<T> zeros(std::size_t r, std::size_t c) {
+    return matriz<T>(r, c, T{0});
+}
+
+template <mat::Scalar T>
+[[nodiscard]] inline matriz<T> ones(std::size_t r, std::size_t c) {
+    return matriz<T>(r, c, T{1});
+}
+
+template <mat::Scalar T>
+[[nodiscard]] inline matriz<T> eye(std::size_t dim) {
+    return matriz<T>::identity(dim);
+}
+
+template <mat::Scalar T>
+[[nodiscard]] inline matriz<T> powm(const matriz<T>& A, long long e) {
+    return A.pow(e);
+}
+
+template <mat::Scalar T>
+[[nodiscard]] inline matriz<T> diag(std::initializer_list<T> in) {
+    matriz<T> temp(in.size(), in.size(), T{0});
+    std::size_t i = 0;
+    for (auto it = in.begin(); it != in.end(); ++it, ++i)
+        temp[i][i] = *it;
+    return temp;
+}
+
+template <mat::Scalar T>
+[[nodiscard]] inline matriz<T> diag(const std::vector<T>& v) {
+    matriz<T> temp(v.size(), v.size(), T{0});
+    for (std::size_t i = 0; i < v.size(); ++i)
+        temp[i][i] = v[i];
+    return temp;
+}
+
+template <mat::Scalar T, typename V>
+inline void spdiags(const std::vector<V>& d, const std::vector<int>& k, matriz<T>& A) {
+    int n = static_cast<int>(A.linhas());
+    int m = static_cast<int>(A.colunas());
+    int p = static_cast<int>(d.size());
+    int q = static_cast<int>(k.size());
+    if (p != q) {
+        std::cout << "The size of d and k must be the same." << std::endl;
+        return;
+    }
+    for (int i = 0; i < p; ++i) {
+        int j = k[i];
+        if (j >= 0) {
+            for (int l = 0; l < n - j && l + j < m; ++l) {
+                A[l][l + j] = static_cast<T>(d[i]);
+            }
+        } else {
+            for (int l = 0; l < m + j && l - j < n; ++l) {
+                A[l - j][l] = static_cast<T>(d[i]);
+            }
+        }
+    }
+}
+
+template <mat::Scalar T, typename V>
+inline void spdiags(std::initializer_list<V> d, std::initializer_list<int> k, matriz<T>& A) {
+    std::vector<V> vd(d);
+    std::vector<int> vk(k);
+    spdiags(vd, vk, A);
+}
+
+// Expansão em série de Taylor para a exponencial matricial
+template <mat::Scalar T>
+[[nodiscard]] inline matriz<T> expm_taylor(const matriz<T>& A, int terms = 100) {
+    if (!A.is_square()) {
+        throw std::invalid_argument("expm_taylor requer uma matriz quadrada.");
+    }
+    matriz<T> temp(A.linhas(), A.colunas(), T{0});
+    matriz<T> current = eye<T>(A.linhas());
+    temp = temp + current;
+
+    for (int i = 1; i < terms; ++i) {
+        current = (current * A) / static_cast<mat::real_type_t<T>>(i);
+        temp = temp + current;
+    }
+    return temp;
+}
+
+template <mat::Scalar T>
+[[nodiscard]] inline matriz<T> expm_teste(const matriz<T>& A, int terms = 100) {
+    return expm_taylor(A, terms);
+}
+
+// Divisão heterogénea entre Matrix<T> e escalar S conversível para T
+template <mat::Scalar T, typename S>
+requires (!std::same_as<T, S>) && std::is_convertible_v<S, T>
+[[nodiscard]] inline mat::Matrix<T> operator/(const mat::Matrix<T>& m, const S& s) {
+    return m / static_cast<T>(s);
+}
 
 // Exportações adicionais no escopo global
 using mat::matrix_power;
